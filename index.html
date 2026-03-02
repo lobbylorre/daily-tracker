@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的行动学习电子手账 - 云同步版</title>
+    <title>我的行动学习电子手账 - 智能兼容版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -41,14 +41,14 @@
     <div id="app-loader" class="fixed inset-0 loading-overlay">
         <div class="text-center">
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-            <p class="mt-2 text-indigo-600 font-medium">正在连接云端数据库...</p>
+            <p id="loader-text" class="mt-2 text-indigo-600 font-medium">正在初始化手账...</p>
         </div>
     </div>
 
     <div class="max-w-4xl mx-auto">
         <header class="mb-8 text-center">
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">📒 行动学习手账 (云端版)</h1>
-            <p class="text-gray-500">数据已加密并存储在云端，多端同步</p>
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">📒 行动学习手账</h1>
+            <p id="storage-status" class="text-gray-500 text-sm">正在检查存储模式...</p>
             <div id="current-date" class="mt-2 text-lg font-medium text-indigo-600"></div>
             <div id="user-display" class="text-[10px] text-gray-400 mt-1 opacity-50"></div>
         </header>
@@ -63,7 +63,7 @@
                         class="w-full p-3 border border-gray-200 rounded-xl mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400">
                     <button onclick="addTask()" 
                         class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-xl transition-all">
-                        保存到云端
+                        保存任务
                     </button>
                 </div>
 
@@ -106,64 +106,74 @@
     </div>
 
     <script type="module">
-        // 引入 Firebase 核心 SDK
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Firebase 配置 (环境已自动注入)
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-action-learning-v1';
-
-        let tasks = [];
+        let isCloudMode = false;
+        let db, auth, user, tasks = [];
         let timerInterval = null;
         let activeTaskId = null;
-        let user = null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-action-learning-v1';
 
-        // 1. 认证流程
-        const startAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
+        // 初始化判断：检查是否有云端配置
+        const initApp = async () => {
+            if (typeof __firebase_config !== 'undefined') {
+                try {
+                    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+                    const { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                    const { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, updateDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+
+                    const firebaseConfig = JSON.parse(__firebase_config);
+                    const app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+                    isCloudMode = true;
+
+                    document.getElementById('storage-status').innerText = "☁️ 云端同步模式：数据多端同步";
+
+                    onAuthStateChanged(auth, (u) => {
+                        if (u) {
+                            user = u;
+                            document.getElementById('user-display').innerText = `Cloud ID: ${u.uid}`;
+                            setupCloudSync(collection, onSnapshot);
+                        }
+                    });
+
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (e) {
+                    console.error("Firebase init failed, falling back to local storage", e);
+                    switchToLocalMode();
+                }
             } else {
-                await signInAnonymously(auth);
+                switchToLocalMode();
             }
         };
 
-        onAuthStateChanged(auth, (u) => {
-            if (u) {
-                user = u;
-                document.getElementById('user-display').innerText = `Device: ${u.uid}`;
-                initDataSync();
-            }
-        });
+        function switchToLocalMode() {
+            isCloudMode = false;
+            document.getElementById('storage-status').innerText = "🏠 本地存储模式：数据仅保存在此浏览器";
+            document.getElementById('user-display').innerText = "Local Mode";
+            tasks = JSON.parse(localStorage.getItem('local_tasks')) || [];
+            renderTasks();
+            document.getElementById('app-loader').classList.add('hidden');
+        }
 
-        // 2. 实时数据同步
-        function initDataSync() {
-            if (!user) return;
-            // 遵循 RULE 1 路径规范
+        function setupCloudSync(collection, onSnapshot) {
             const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
-            
             onSnapshot(tasksRef, (snapshot) => {
                 tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // 简单排序：按创建时间倒序
                 tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                 renderTasks();
                 document.getElementById('app-loader').classList.add('hidden');
-            }, (err) => {
-                console.error("Firebase sync error:", err);
-                showMessage("数据同步异常");
             });
         }
 
-        // 3. 业务逻辑
+        // 核心功能：添加
         window.addTask = async () => {
             const input = document.getElementById('task-input');
             const text = input.value.trim();
             if (!text) return showMessage("请输入内容");
-            if (!user) return showMessage("身份验证中...");
 
             const id = Date.now().toString();
             const newTask = {
@@ -173,35 +183,54 @@
                 createdAt: new Date().toISOString()
             };
 
-            try {
-                // 保存到云端
+            if (isCloudMode && user) {
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
                 await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), newTask);
-                input.value = '';
-                showMessage("已同步至云端");
-            } catch (e) {
-                showMessage("保存失败");
+            } else {
+                tasks.unshift({id, ...newTask});
+                saveLocal();
             }
+            input.value = '';
+            showMessage("添加成功");
         };
 
+        // 核心功能：切换状态
         window.toggleTask = async (id) => {
-            if (!user) return;
             const task = tasks.find(t => t.id == id);
             if (activeTaskId == id) stopTimer();
             
-            const taskRef = doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString());
-            await updateDoc(taskRef, { completed: !task.completed });
-        };
-
-        window.deleteTask = async (id) => {
-            if (!user) return;
-            if (activeTaskId == id) stopTimer();
-            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()));
-        };
-
-        window.toggleTimer = (id) => {
-            if (activeTaskId == id) {
-                stopTimer();
+            if (isCloudMode && user) {
+                const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()), { completed: !task.completed });
             } else {
+                task.completed = !task.completed;
+                saveLocal();
+            }
+        };
+
+        // 核心功能：删除
+        window.deleteTask = async (id) => {
+            if (activeTaskId == id) stopTimer();
+            if (isCloudMode && user) {
+                const { doc, deleteDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()));
+            } else {
+                tasks = tasks.filter(t => t.id != id);
+                saveLocal();
+            }
+        };
+
+        window.clearCompleted = async () => {
+            const toDelete = tasks.filter(t => t.completed);
+            for (let t of toDelete) {
+                await deleteTask(t.id);
+            }
+        };
+
+        // 计时器逻辑
+        window.toggleTimer = (id) => {
+            if (activeTaskId == id) stopTimer();
+            else {
                 if (activeTaskId !== null) stopTimer();
                 startTimer(id);
             }
@@ -210,31 +239,21 @@
         function startTimer(id) {
             const task = tasks.find(t => t.id == id);
             if (task.completed) return showMessage("已完成任务无法计时");
-
             activeTaskId = id;
             timerInterval = setInterval(() => {
                 const idx = tasks.findIndex(t => t.id == id);
                 tasks[idx].totalTime += 1;
                 renderTasks();
-                
-                // 每 10 秒自动向云端保存一次进度，或者在停止时保存
-                if (tasks[idx].totalTime % 10 === 0) {
-                    saveTimeToCloud(id, tasks[idx].totalTime);
-                }
+                if (isCloudMode && tasks[idx].totalTime % 10 === 0) saveTimeToCloud(id, tasks[idx].totalTime);
             }, 1000);
             renderTasks();
         }
 
-        async function saveTimeToCloud(id, time) {
-            if (!user) return;
-            const taskRef = doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString());
-            await updateDoc(taskRef, { totalTime: time });
-        }
-
-        function stopTimer() {
+        async function stopTimer() {
             if (activeTaskId !== null) {
                 const task = tasks.find(t => t.id == activeTaskId);
-                saveTimeToCloud(activeTaskId, task.totalTime);
+                if (isCloudMode) await saveTimeToCloud(activeTaskId, task.totalTime);
+                else saveLocal();
             }
             clearInterval(timerInterval);
             timerInterval = null;
@@ -242,11 +261,21 @@
             renderTasks();
         }
 
-        // 4. UI 渲染
+        async function saveTimeToCloud(id, time) {
+            if (!isCloudMode || !user) return;
+            const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()), { totalTime: time });
+        }
+
+        function saveLocal() {
+            localStorage.setItem('local_tasks', JSON.stringify(tasks));
+            renderTasks();
+        }
+
+        // UI 渲染辅助
         function renderTasks() {
             const container = document.getElementById('task-list');
             const empty = document.getElementById('empty-state');
-            
             if (tasks.length === 0) {
                 container.innerHTML = '';
                 empty.classList.remove('hidden');
@@ -254,24 +283,15 @@
                 return;
             }
             empty.classList.add('hidden');
-
             container.innerHTML = tasks.map(task => `
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-white transition-all ${task.completed ? 'opacity-60' : ''} ${activeTaskId == task.id ? 'timer-active border-indigo-300' : ''}">
                     <div class="flex items-center space-x-4 mb-3 sm:mb-0">
-                        <input type="checkbox" ${task.completed ? 'checked' : ''} 
-                            onchange="toggleTask('${task.id}')"
-                            class="w-5 h-5 rounded-full text-indigo-500">
-                        <span class="${task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}">
-                            ${task.text}
-                        </span>
+                        <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded-full text-indigo-500">
+                        <span class="${task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}">${task.text}</span>
                     </div>
-                    
                     <div class="flex items-center space-x-3 justify-end">
-                        <div class="text-sm font-mono bg-gray-100 px-3 py-1 rounded-lg text-gray-600">
-                            ⏱️ ${formatTime(task.totalTime)}
-                        </div>
-                        <button onclick="toggleTimer('${task.id}')" 
-                            class="p-2 rounded-lg text-sm px-4 ${activeTaskId == task.id ? 'bg-red-500 text-white' : 'bg-indigo-100 text-indigo-600'}">
+                        <div class="text-sm font-mono bg-gray-100 px-3 py-1 rounded-lg text-gray-600">⏱️ ${formatTime(task.totalTime)}</div>
+                        <button onclick="toggleTimer('${task.id}')" class="p-2 rounded-lg text-sm px-4 ${activeTaskId == task.id ? 'bg-red-500 text-white' : 'bg-indigo-100 text-indigo-600'}">
                             ${activeTaskId == task.id ? '停止' : '开始计时'}
                         </button>
                         <button onclick="deleteTask('${task.id}')" class="text-gray-300 hover:text-red-500">
@@ -280,7 +300,6 @@
                     </div>
                 </div>
             `).join('');
-            
             updateStats();
         }
 
@@ -304,13 +323,12 @@
             setTimeout(() => b.classList.add('hidden'), 2000);
         }
 
-        function updateDate() {
-            const now = new Date();
-            document.getElementById('current-date').innerText = now.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-        }
+        const updateDate = () => {
+            document.getElementById('current-date').innerText = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        };
 
         updateDate();
-        startAuth();
+        initApp();
     </script>
 </body>
 </html>
