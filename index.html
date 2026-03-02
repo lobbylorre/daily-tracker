@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的行动学习电子手账 - 云同步版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f8f9fa;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .handbook-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .timer-active {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { background-color: #fee2e2; }
+            50% { background-color: #fecaca; }
+            100% { background-color: #fee2e2; }
+        }
+        .loading-overlay {
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <!-- 加载遮罩层 -->
+    <div id="app-loader" class="fixed inset-0 loading-overlay">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
+            <p class="mt-2 text-indigo-600 font-medium">正在连接云端数据库...</p>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">📒 行动学习手账 (云端版)</h1>
+            <p class="text-gray-500">数据已加密并存储在云端，多端同步</p>
+            <div id="current-date" class="mt-2 text-lg font-medium text-indigo-600"></div>
+            <div id="user-display" class="text-[10px] text-gray-400 mt-1 opacity-50"></div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="md:col-span-1 space-y-6">
+                <div class="handbook-card rounded-2xl p-6">
+                    <h2 class="text-xl font-semibold mb-4 flex items-center">
+                        <span class="mr-2">✍️</span> 添加任务
+                    </h2>
+                    <input type="text" id="task-input" placeholder="想要完成什么？" 
+                        class="w-full p-3 border border-gray-200 rounded-xl mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <button onclick="addTask()" 
+                        class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-xl transition-all">
+                        保存到云端
+                    </button>
+                </div>
+
+                <div class="handbook-card rounded-2xl p-6">
+                    <h2 class="text-xl font-semibold mb-4 flex items-center">
+                        <span class="mr-2">📊 今日统计</span>
+                    </h2>
+                    <div class="space-y-3">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">已完成任务</span>
+                            <span id="stat-completed" class="font-bold text-green-600">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">累计专注时长</span>
+                            <span id="stat-time" class="font-bold text-indigo-600">0 min</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="md:col-span-2 space-y-6">
+                <div class="handbook-card rounded-2xl p-6 min-h-[500px]">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-semibold">📅 任务清单</h2>
+                        <button onclick="clearCompleted()" class="text-sm text-gray-400 hover:text-red-500">清除已完成</button>
+                    </div>
+                    
+                    <div id="task-list" class="space-y-4"></div>
+
+                    <div id="empty-state" class="hidden text-center py-20">
+                        <p class="text-gray-400 italic">目前还没有任务，开始规划你的学习吧！</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="msg-box" class="fixed bottom-10 left-1/2 -translate-x-1/2 hidden bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl transition-opacity">
+        <span id="msg-text"></span>
+    </div>
+
+    <script type="module">
+        // 引入 Firebase 核心 SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 配置 (环境已自动注入)
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-action-learning-v1';
+
+        let tasks = [];
+        let timerInterval = null;
+        let activeTaskId = null;
+        let user = null;
+
+        // 1. 认证流程
+        const startAuth = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+
+        onAuthStateChanged(auth, (u) => {
+            if (u) {
+                user = u;
+                document.getElementById('user-display').innerText = `Device: ${u.uid}`;
+                initDataSync();
+            }
+        });
+
+        // 2. 实时数据同步
+        function initDataSync() {
+            if (!user) return;
+            // 遵循 RULE 1 路径规范
+            const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
+            
+            onSnapshot(tasksRef, (snapshot) => {
+                tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // 简单排序：按创建时间倒序
+                tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                renderTasks();
+                document.getElementById('app-loader').classList.add('hidden');
+            }, (err) => {
+                console.error("Firebase sync error:", err);
+                showMessage("数据同步异常");
+            });
+        }
+
+        // 3. 业务逻辑
+        window.addTask = async () => {
+            const input = document.getElementById('task-input');
+            const text = input.value.trim();
+            if (!text) return showMessage("请输入内容");
+            if (!user) return showMessage("身份验证中...");
+
+            const id = Date.now().toString();
+            const newTask = {
+                text: text,
+                completed: false,
+                totalTime: 0,
+                createdAt: new Date().toISOString()
+            };
+
+            try {
+                // 保存到云端
+                await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), newTask);
+                input.value = '';
+                showMessage("已同步至云端");
+            } catch (e) {
+                showMessage("保存失败");
+            }
+        };
+
+        window.toggleTask = async (id) => {
+            if (!user) return;
+            const task = tasks.find(t => t.id == id);
+            if (activeTaskId == id) stopTimer();
+            
+            const taskRef = doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString());
+            await updateDoc(taskRef, { completed: !task.completed });
+        };
+
+        window.deleteTask = async (id) => {
+            if (!user) return;
+            if (activeTaskId == id) stopTimer();
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()));
+        };
+
+        window.toggleTimer = (id) => {
+            if (activeTaskId == id) {
+                stopTimer();
+            } else {
+                if (activeTaskId !== null) stopTimer();
+                startTimer(id);
+            }
+        };
+
+        function startTimer(id) {
+            const task = tasks.find(t => t.id == id);
+            if (task.completed) return showMessage("已完成任务无法计时");
+
+            activeTaskId = id;
+            timerInterval = setInterval(() => {
+                const idx = tasks.findIndex(t => t.id == id);
+                tasks[idx].totalTime += 1;
+                renderTasks();
+                
+                // 每 10 秒自动向云端保存一次进度，或者在停止时保存
+                if (tasks[idx].totalTime % 10 === 0) {
+                    saveTimeToCloud(id, tasks[idx].totalTime);
+                }
+            }, 1000);
+            renderTasks();
+        }
+
+        async function saveTimeToCloud(id, time) {
+            if (!user) return;
+            const taskRef = doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString());
+            await updateDoc(taskRef, { totalTime: time });
+        }
+
+        function stopTimer() {
+            if (activeTaskId !== null) {
+                const task = tasks.find(t => t.id == activeTaskId);
+                saveTimeToCloud(activeTaskId, task.totalTime);
+            }
+            clearInterval(timerInterval);
+            timerInterval = null;
+            activeTaskId = null;
+            renderTasks();
+        }
+
+        // 4. UI 渲染
+        function renderTasks() {
+            const container = document.getElementById('task-list');
+            const empty = document.getElementById('empty-state');
+            
+            if (tasks.length === 0) {
+                container.innerHTML = '';
+                empty.classList.remove('hidden');
+                updateStats();
+                return;
+            }
+            empty.classList.add('hidden');
+
+            container.innerHTML = tasks.map(task => `
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-white transition-all ${task.completed ? 'opacity-60' : ''} ${activeTaskId == task.id ? 'timer-active border-indigo-300' : ''}">
+                    <div class="flex items-center space-x-4 mb-3 sm:mb-0">
+                        <input type="checkbox" ${task.completed ? 'checked' : ''} 
+                            onchange="toggleTask('${task.id}')"
+                            class="w-5 h-5 rounded-full text-indigo-500">
+                        <span class="${task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}">
+                            ${task.text}
+                        </span>
+                    </div>
+                    
+                    <div class="flex items-center space-x-3 justify-end">
+                        <div class="text-sm font-mono bg-gray-100 px-3 py-1 rounded-lg text-gray-600">
+                            ⏱️ ${formatTime(task.totalTime)}
+                        </div>
+                        <button onclick="toggleTimer('${task.id}')" 
+                            class="p-2 rounded-lg text-sm px-4 ${activeTaskId == task.id ? 'bg-red-500 text-white' : 'bg-indigo-100 text-indigo-600'}">
+                            ${activeTaskId == task.id ? '停止' : '开始计时'}
+                        </button>
+                        <button onclick="deleteTask('${task.id}')" class="text-gray-300 hover:text-red-500">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            updateStats();
+        }
+
+        function updateStats() {
+            const completed = tasks.filter(t => t.completed).length;
+            const totalSec = tasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
+            document.getElementById('stat-completed').innerText = completed;
+            document.getElementById('stat-time').innerText = Math.floor(totalSec / 60) + ' min';
+        }
+
+        function formatTime(s) {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return `${m}:${sec < 10 ? '0'+sec : sec}`;
+        }
+
+        function showMessage(t) {
+            const b = document.getElementById('msg-box');
+            document.getElementById('msg-text').innerText = t;
+            b.classList.remove('hidden');
+            setTimeout(() => b.classList.add('hidden'), 2000);
+        }
+
+        function updateDate() {
+            const now = new Date();
+            document.getElementById('current-date').innerText = now.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        updateDate();
+        startAuth();
+    </script>
+</body>
+</html>
