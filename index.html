@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的行动学习电子手账 - 高精度计时版</title>
+    <title>我的行动学习电子手账 - 日期分组版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- 引入 Font Awesome 用于显示 GitHub 图标 -->
@@ -58,6 +58,30 @@
             transform: translateY(-5px) scale(1.1);
             background: #000;
         }
+        .date-divider {
+            position: relative;
+            text-align: center;
+            margin: 2rem 0 1rem;
+        }
+        .date-divider::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 50%;
+            width: 100%;
+            height: 1px;
+            background: #e5e7eb;
+            z-index: 1;
+        }
+        .date-label {
+            position: relative;
+            z-index: 2;
+            background: #f8f9fa;
+            padding: 0 1rem;
+            font-size: 0.875rem;
+            color: #6366f1;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -111,14 +135,15 @@
             </div>
 
             <div class="md:col-span-2 space-y-6">
-                <!-- Task List -->
+                <!-- Task List Area -->
                 <div class="handbook-card rounded-2xl p-6 min-h-[500px]">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-xl font-semibold">📅 任务清单</h2>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">📅 任务档案</h2>
                         <button onclick="clearCompleted()" class="text-sm text-gray-400 hover:text-red-500">清除已完成</button>
                     </div>
                     
-                    <div id="task-list" class="space-y-4"></div>
+                    <!-- 分组显示容器 -->
+                    <div id="task-container" class="space-y-4"></div>
 
                     <div id="empty-state" class="hidden text-center py-20">
                         <p class="text-gray-400 italic">目前还没有任务，开始规划你的学习吧！</p>
@@ -129,7 +154,7 @@
 
         <!-- Footer -->
         <footer class="mt-12 text-center text-gray-400 text-sm pb-10">
-            <p>© 2024 行动学习记录本 · 高精度计时</p>
+            <p>© 2024 行动学习记录本 · 日期分册版</p>
         </footer>
     </div>
 
@@ -148,11 +173,11 @@
         let db, auth, user, tasks = [];
         let timerInterval = null;
         let activeTaskId = null;
-        let startTime = null; // 记录开始计时的准确时间点
-        let initialTaskTime = 0; // 记录开始计时前任务已累计的时长
+        let startTime = null;
+        let initialTaskTime = 0;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-action-learning-v1';
 
-        // Initialize App & Mode
+        // Initialize App
         const initApp = async () => {
             if (typeof __firebase_config !== 'undefined') {
                 try {
@@ -182,7 +207,6 @@
                         await signInAnonymously(auth);
                     }
                 } catch (e) {
-                    console.error("Firebase init failed", e);
                     switchToLocalMode();
                 }
             } else {
@@ -203,11 +227,9 @@
             const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
             onSnapshot(tasksRef, (snapshot) => {
                 tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // 默认按时间倒序排
                 tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                // 如果正在计时中，不应该被覆盖掉本地计算的精确时间，除非是其他设备更新了
-                if (activeTaskId === null) {
-                    renderTasks();
-                }
+                if (activeTaskId === null) renderTasks();
                 document.getElementById('app-loader').classList.add('hidden');
             });
         }
@@ -223,7 +245,7 @@
                 text: text,
                 completed: false,
                 totalTime: 0,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString() // 携带详细时间戳
             };
 
             if (isCloudMode && user) {
@@ -263,16 +285,13 @@
 
         window.clearCompleted = async () => {
             const toDelete = tasks.filter(t => t.completed);
-            for (let t of toDelete) {
-                await deleteTask(t.id);
-            }
+            for (let t of toDelete) await deleteTask(t.id);
         };
 
-        // Precision Timer Logic (Timestamp based)
+        // Timer
         window.toggleTimer = (id) => {
-            if (activeTaskId == id) {
-                stopTimer();
-            } else {
+            if (activeTaskId == id) stopTimer();
+            else {
                 if (activeTaskId !== null) stopTimer();
                 startTimer(id);
             }
@@ -281,54 +300,37 @@
         function startTimer(id) {
             const task = tasks.find(t => t.id == id);
             if (task.completed) return showMessage("已完成任务无法计时");
-            
             activeTaskId = id;
-            startTime = Date.now(); // 记录系统时间戳
+            startTime = Date.now();
             initialTaskTime = task.totalTime || 0;
-
             timerInterval = setInterval(() => {
-                const now = Date.now();
-                const elapsedSeconds = Math.floor((now - startTime) / 1000);
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 const idx = tasks.findIndex(t => t.id == id);
-                
-                // 基于时间差计算总时长
-                tasks[idx].totalTime = initialTaskTime + elapsedSeconds;
-                
+                tasks[idx].totalTime = initialTaskTime + elapsed;
                 renderTasks();
-
-                // 自动同步：每隔15秒或时间发生显著跳跃时同步
-                if (elapsedSeconds > 0 && elapsedSeconds % 15 === 0) {
-                    saveTimeToCloud(id, tasks[idx].totalTime);
-                }
+                if (elapsed > 0 && elapsed % 15 === 0) saveTimeToCloud(id, tasks[idx].totalTime);
             }, 1000);
             renderTasks();
         }
 
         async function stopTimer() {
             if (activeTaskId !== null) {
-                const now = Date.now();
-                const elapsedSeconds = Math.floor((now - startTime) / 1000);
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 const idx = tasks.findIndex(t => t.id == activeTaskId);
-                tasks[idx].totalTime = initialTaskTime + elapsedSeconds;
-
+                tasks[idx].totalTime = initialTaskTime + elapsed;
                 if (isCloudMode) await saveTimeToCloud(activeTaskId, tasks[idx].totalTime);
                 else saveLocal();
             }
             clearInterval(timerInterval);
             timerInterval = null;
             activeTaskId = null;
-            startTime = null;
             renderTasks();
         }
 
         async function saveTimeToCloud(id, time) {
             if (!isCloudMode || !user) return;
-            try {
-                const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()), { totalTime: time });
-            } catch (e) {
-                console.error("Cloud sync failed", e);
-            }
+            const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()), { totalTime: time });
         }
 
         function saveLocal() {
@@ -336,10 +338,11 @@
             renderTasks();
         }
 
-        // UI Helpers
+        // Rendering Logic with Grouping
         function renderTasks() {
-            const container = document.getElementById('task-list');
+            const container = document.getElementById('task-container');
             const empty = document.getElementById('empty-state');
+            
             if (tasks.length === 0) {
                 container.innerHTML = '';
                 empty.classList.remove('hidden');
@@ -347,29 +350,61 @@
                 return;
             }
             empty.classList.add('hidden');
-            container.innerHTML = tasks.map(task => `
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-white transition-all ${task.completed ? 'opacity-60' : ''} ${activeTaskId == task.id ? 'timer-active border-indigo-300' : ''}">
-                    <div class="flex items-center space-x-4 mb-3 sm:mb-0">
-                        <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded-full text-indigo-500">
-                        <span class="${task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}">${task.text}</span>
+
+            // 1. 按日期分组
+            const groups = {};
+            tasks.forEach(task => {
+                const dateKey = new Date(task.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+                if (!groups[dateKey]) groups[dateKey] = [];
+                groups[dateKey].push(task);
+            });
+
+            // 2. 排序日期键 (从新到旧)
+            const sortedDates = Object.keys(groups).sort((a, b) => new Date(b) - new Date(a));
+
+            // 3. 构建 HTML
+            let html = '';
+            sortedDates.forEach(date => {
+                html += `
+                    <div class="date-divider">
+                        <span class="date-label">${date}</span>
                     </div>
-                    <div class="flex items-center space-x-3 justify-end">
-                        <div class="text-sm font-mono bg-gray-100 px-3 py-1 rounded-lg text-gray-600">⏱️ ${formatTime(task.totalTime)}</div>
-                        <button onclick="toggleTimer('${task.id}')" class="p-2 rounded-lg text-sm px-4 ${activeTaskId == task.id ? 'bg-red-500 text-white' : 'bg-indigo-100 text-indigo-600'}">
-                            ${activeTaskId == task.id ? '停止' : '开始计时'}
-                        </button>
-                        <button onclick="deleteTask('${task.id}')" class="text-gray-300 hover:text-red-500">
-                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+                `;
+                groups[date].forEach(task => {
+                    html += `
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-white transition-all ${task.completed ? 'opacity-60' : ''} ${activeTaskId == task.id ? 'timer-active border-indigo-300' : ''}">
+                            <div class="flex items-center space-x-4 mb-3 sm:mb-0">
+                                <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded-full text-indigo-500">
+                                <div class="flex flex-col">
+                                    <span class="${task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}">${task.text}</span>
+                                    <span class="text-[10px] text-gray-400">${new Date(task.createdAt).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3 justify-end">
+                                <div class="text-sm font-mono bg-gray-100 px-3 py-1 rounded-lg text-gray-600">⏱️ ${formatTime(task.totalTime)}</div>
+                                <button onclick="toggleTimer('${task.id}')" class="p-2 rounded-lg text-sm px-4 ${activeTaskId == task.id ? 'bg-red-500 text-white' : 'bg-indigo-100 text-indigo-600'}">
+                                    ${activeTaskId == task.id ? '停止' : '开始计时'}
+                                </button>
+                                <button onclick="deleteTask('${task.id}')" class="text-gray-300 hover:text-red-500">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+            });
+
+            container.innerHTML = html;
             updateStats();
         }
 
         function updateStats() {
-            const completed = tasks.filter(t => t.completed).length;
-            const totalSec = tasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
+            const today = new Date().toLocaleDateString('zh-CN');
+            // 只统计今日任务
+            const todayTasks = tasks.filter(t => new Date(t.createdAt).toLocaleDateString('zh-CN') === today);
+            const completed = todayTasks.filter(t => t.completed).length;
+            const totalSec = todayTasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
+            
             document.getElementById('stat-completed').innerText = completed;
             document.getElementById('stat-time').innerText = Math.floor(totalSec / 60) + ' min';
         }
@@ -387,20 +422,14 @@
             setTimeout(() => b.classList.add('hidden'), 2000);
         }
 
-        const updateDate = () => {
-            document.getElementById('current-date').innerText = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-        };
-
-        // Handle page visibility change (tab switching) to ensure immediate sync
         document.addEventListener("visibilitychange", () => {
             if (document.hidden && activeTaskId !== null) {
-                // 当用户切出页面时，进行一次静默同步
                 const task = tasks.find(t => t.id == activeTaskId);
                 saveTimeToCloud(activeTaskId, task.totalTime);
             }
         });
 
-        updateDate();
+        document.getElementById('current-date').innerText = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         initApp();
     </script>
 </body>
