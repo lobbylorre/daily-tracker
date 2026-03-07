@@ -108,12 +108,19 @@
                     <h2 class="text-xl font-semibold mb-4 flex items-center">
                         <span class="mr-2">✍️</span> 添加任务
                     </h2>
-                    <input type="text" id="task-input" placeholder="想要完成什么？" 
-                        class="w-full p-3 border border-gray-200 rounded-xl mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                    <button onclick="addTask()" 
-                        class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-xl transition-all">
-                        保存任务
-                    </button>
+                    <div class="space-y-3">
+                        <input type="text" id="task-input" placeholder="想要完成什么？" 
+                            class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <div class="relative">
+                            <input type="number" id="manual-time" placeholder="补录时长 (分钟)" min="0"
+                                class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                            <span class="absolute right-3 top-3.5 text-xs text-gray-400">min</span>
+                        </div>
+                        <button onclick="addTask()" 
+                            class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-xl transition-all">
+                            保存任务
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Stats -->
@@ -242,15 +249,18 @@
         // Action Handlers
         window.addTask = async () => {
             const input = document.getElementById('task-input');
+            const manualTimeInput = document.getElementById('manual-time');
             const text = input.value.trim();
+            const manualMinutes = parseInt(manualTimeInput.value) || 0;
+
             if (!text) return showMessage("请输入内容");
 
             const id = Date.now().toString();
             const newTask = {
                 text: text,
                 completed: false,
-                totalTime: 0,
-                createdAt: new Date().toISOString() // 携带详细时间戳
+                totalTime: manualMinutes * 60, // 将输入的分钟转换为秒存储
+                createdAt: new Date().toISOString()
             };
 
             if (isCloudMode && user) {
@@ -261,7 +271,8 @@
                 saveLocal();
             }
             input.value = '';
-            showMessage("添加成功");
+            manualTimeInput.value = '';
+            showMessage(manualMinutes > 0 ? "补录成功" : "添加成功");
         };
 
         window.toggleTask = async (id) => {
