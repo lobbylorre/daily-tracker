@@ -119,16 +119,21 @@
                 <!-- Stats -->
                 <div class="handbook-card rounded-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 flex items-center">
-                        <span class="mr-2">📊 今日统计</span>
+                        <span class="mr-2">📊 数据统计</span>
                     </h2>
                     <div class="space-y-3">
                         <div class="flex justify-between">
-                            <span class="text-gray-600">已完成任务</span>
+                            <span class="text-gray-600">今日已完成</span>
                             <span id="stat-completed" class="font-bold text-green-600">0</span>
                         </div>
                         <div class="flex justify-between">
-                            <span class="text-gray-600">累计专注时长</span>
-                            <span id="stat-time" class="font-bold text-indigo-600">0 min</span>
+                            <span class="text-gray-600">今日专注时长</span>
+                            <span id="stat-time-today" class="font-bold text-indigo-600">0 min</span>
+                        </div>
+                        <hr class="border-gray-100">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">总累计专注</span>
+                            <span id="stat-time-total" class="font-bold text-orange-600">0 min</span>
                         </div>
                     </div>
                 </div>
@@ -400,13 +405,18 @@
 
         function updateStats() {
             const today = new Date().toLocaleDateString('zh-CN');
-            // 只统计今日任务
-            const todayTasks = tasks.filter(t => new Date(t.createdAt).toLocaleDateString('zh-CN') === today);
-            const completed = todayTasks.filter(t => t.completed).length;
-            const totalSec = todayTasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
             
-            document.getElementById('stat-completed').innerText = completed;
-            document.getElementById('stat-time').innerText = Math.floor(totalSec / 60) + ' min';
+            // 统计今日任务
+            const todayTasks = tasks.filter(t => new Date(t.createdAt).toLocaleDateString('zh-CN') === today);
+            const completedToday = todayTasks.filter(t => t.completed).length;
+            const timeTodaySec = todayTasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
+            
+            // 统计总任务（所有历史任务）
+            const timeTotalSec = tasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
+            
+            document.getElementById('stat-completed').innerText = completedToday;
+            document.getElementById('stat-time-today').innerText = Math.floor(timeTodaySec / 60) + ' min';
+            document.getElementById('stat-time-total').innerText = Math.floor(timeTotalSec / 60) + ' min';
         }
 
         function formatTime(s) {
