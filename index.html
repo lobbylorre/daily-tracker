@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的行动学习电子手账 - 增强版</title>
+    <title>我的行动学习电子手账 - 计时增强版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- 引入 Font Awesome 用于图标 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
@@ -36,27 +35,6 @@
             justify-content: center;
             z-index: 50;
         }
-        .github-float {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            background: #24292f;
-            color: white;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            transition: all 0.3s ease;
-            z-index: 100;
-        }
-        .github-float:hover {
-            transform: translateY(-5px) scale(1.1);
-            background: #000;
-        }
         .date-divider {
             position: relative;
             text-align: center;
@@ -80,11 +58,22 @@
             font-size: 0.9rem;
             color: #6366f1;
             font-weight: 700;
-            letter-spacing: 0.05em;
         }
-        /* 自定义日期选择器样式微调 */
-        input[type="date"] {
-            position: relative;
+        .github-float {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: #24292f;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 100;
         }
     </style>
 </head>
@@ -93,7 +82,7 @@
     <div id="app-loader" class="fixed inset-0 loading-overlay">
         <div class="text-center">
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-            <p id="loader-text" class="mt-2 text-indigo-600 font-medium">正在开启手账本...</p>
+            <p id="loader-text" class="mt-2 text-indigo-600 font-medium">同步数据中...</p>
         </div>
     </div>
 
@@ -107,24 +96,21 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="md:col-span-1 space-y-6">
-                <!-- Task Input Area -->
+                <!-- Task Input -->
                 <div class="handbook-card rounded-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 flex items-center">
-                        <span class="mr-2">✍️</span> 添加/补录任务
+                        <span class="mr-2">✍️</span> 记录行动
                     </h2>
                     <div class="space-y-3">
-                        <!-- 任务名称 -->
                         <input type="text" id="task-input" placeholder="任务内容..." 
                             class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400">
                         
-                        <!-- 日期选择器 -->
                         <div class="flex flex-col">
-                            <label class="text-xs text-gray-400 mb-1 ml-1">任务所属日期</label>
+                            <label class="text-xs text-gray-400 mb-1 ml-1">所属日期</label>
                             <input type="date" id="task-date"
                                 class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-600">
                         </div>
 
-                        <!-- 补录时长 -->
                         <div class="relative">
                             <input type="number" id="manual-time" placeholder="补录时长" min="0"
                                 class="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400">
@@ -133,61 +119,59 @@
 
                         <button onclick="addTask()" 
                             class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-100 transition-all">
-                            保存到手账
+                            保存记录
                         </button>
                     </div>
                 </div>
 
-                <!-- Stats Area -->
+                <!-- Stats -->
                 <div class="handbook-card rounded-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 flex items-center">
                         <span class="mr-2">📊 数据统计</span>
                     </h2>
                     <div class="space-y-4">
                         <div class="flex justify-between items-end">
-                            <span class="text-gray-600 text-sm">今日已完成</span>
+                            <span class="text-gray-600 text-sm">今日完成</span>
                             <span id="stat-completed" class="font-bold text-green-600 text-xl leading-none">0</span>
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-gray-600 text-sm mb-1">今日专注时长</span>
-                            <span id="stat-time-today" class="font-bold text-indigo-600">0 min</span>
+                            <span class="text-gray-600 text-sm mb-1">今日累计</span>
+                            <span id="stat-time-today" class="font-bold text-indigo-600">0 小时 0 分</span>
                         </div>
                         <hr class="border-gray-100">
                         <div class="flex flex-col">
-                            <span class="text-gray-600 text-sm mb-1">总累计专注</span>
-                            <span id="stat-time-total" class="font-bold text-orange-600">0 min</span>
+                            <span class="text-gray-600 text-sm mb-1">总专注时长</span>
+                            <span id="stat-time-total" class="font-bold text-orange-600">0 小时 0 分</span>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="md:col-span-2 space-y-6">
-                <!-- Task List Area -->
+                <!-- Task Archive -->
                 <div class="handbook-card rounded-2xl p-6 min-h-[500px]">
                     <div class="flex justify-between items-center mb-4 border-b border-gray-50 pb-4">
                         <h2 class="text-xl font-semibold text-gray-700">📅 任务档案</h2>
-                        <button onclick="clearCompleted()" class="text-xs font-medium text-gray-400 hover:text-red-500 transition-colors uppercase tracking-wider">清除已完成</button>
+                        <button onclick="clearCompleted()" class="text-xs font-medium text-gray-400 hover:text-red-500 transition-colors uppercase">清理已完成</button>
                     </div>
                     
-                    <!-- 分组显示容器 -->
                     <div id="task-container" class="space-y-4"></div>
 
                     <div id="empty-state" class="hidden text-center py-20">
-                        <div class="text-5xl mb-4">📭</div>
-                        <p class="text-gray-400 italic">目前还没有任务，开始规划你的学习吧！</p>
+                        <div class="text-5xl mb-4 opacity-20">📝</div>
+                        <p class="text-gray-400 italic">还没记录任何行动，快去添加吧！</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Footer -->
         <footer class="mt-12 text-center text-gray-400 text-sm pb-10">
-            <p>© 2024 行动学习记录本 · 精益求精</p>
+            <p>© 2024 行动学习记录本 · 专注每一秒</p>
         </footer>
     </div>
 
     <!-- GitHub Floating Button -->
-    <a href="https://github.com/lobbylorre/daily-tracker" target="_blank" class="github-float" title="查看 GitHub 仓库">
+    <a href="https://github.com/lobbylorre/daily-tracker" target="_blank" class="github-float">
         <i class="fab fa-github"></i>
     </a>
 
@@ -205,13 +189,13 @@
         let initialTaskTime = 0;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-action-learning-v1';
 
-        // 初始化日期选择器为当天
+        // 设置日期
         const setTodayDate = () => {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('task-date').value = today;
         };
 
-        // 初始化应用
+        // 初始化
         const initApp = async () => {
             setTodayDate();
             if (typeof __firebase_config !== 'undefined') {
@@ -226,12 +210,12 @@
                     db = getFirestore(app);
                     isCloudMode = true;
 
-                    document.getElementById('storage-status').innerText = "☁️ 云端同步模式：数据实时同步";
+                    document.getElementById('storage-status').innerText = "☁️ 云端同步模式";
 
                     onAuthStateChanged(auth, (u) => {
                         if (u) {
                             user = u;
-                            document.getElementById('user-display').innerText = `Cloud ID: ${u.uid}`;
+                            document.getElementById('user-display').innerText = `ID: ${u.uid}`;
                             setupCloudSync(collection, onSnapshot);
                         }
                     });
@@ -251,8 +235,7 @@
 
         function switchToLocalMode() {
             isCloudMode = false;
-            document.getElementById('storage-status').innerText = "🏠 本地存储模式：数据仅保存在此浏览器";
-            document.getElementById('user-display').innerText = "Local Mode";
+            document.getElementById('storage-status').innerText = "🏠 本地存储模式";
             tasks = JSON.parse(localStorage.getItem('local_tasks')) || [];
             renderTasks();
             document.getElementById('app-loader').classList.add('hidden');
@@ -262,14 +245,13 @@
             const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
             onSnapshot(tasksRef, (snapshot) => {
                 tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // 按日期排序
                 tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                 if (activeTaskId === null) renderTasks();
                 document.getElementById('app-loader').classList.add('hidden');
             });
         }
 
-        // 添加任务
+        // 添加/补录任务
         window.addTask = async () => {
             const input = document.getElementById('task-input');
             const manualTimeInput = document.getElementById('manual-time');
@@ -280,10 +262,8 @@
             const selectedDate = dateInput.value;
 
             if (!text) return showMessage("请输入任务内容");
-            if (!selectedDate) return showMessage("请选择任务日期");
 
             const id = Date.now().toString();
-            // 构造包含选定日期的 ISO 字符串（保持时间为当前时间或默认值）
             const currentTime = new Date();
             const chosenDate = new Date(selectedDate);
             chosenDate.setHours(currentTime.getHours(), currentTime.getMinutes(), currentTime.getSeconds());
@@ -305,13 +285,12 @@
             input.value = '';
             manualTimeInput.value = '';
             setTodayDate();
-            showMessage(manualMinutes > 0 ? "补录成功" : "添加成功");
+            showMessage("保存成功");
         };
 
         window.toggleTask = async (id) => {
             const task = tasks.find(t => t.id == id);
             if (activeTaskId == id) stopTimer();
-            
             if (isCloudMode && user) {
                 const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
                 await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id.toString()), { completed: !task.completed });
@@ -334,12 +313,10 @@
 
         window.clearCompleted = async () => {
             const toDelete = tasks.filter(t => t.completed);
-            if(toDelete.length === 0) return;
             for (let t of toDelete) await deleteTask(t.id);
-            showMessage("已清理已完成任务");
         };
 
-        // 计时逻辑
+        // 计时
         window.toggleTimer = (id) => {
             if (activeTaskId == id) stopTimer();
             else {
@@ -389,7 +366,7 @@
             renderTasks();
         }
 
-        // 核心渲染与分组
+        // 渲染与分组
         function renderTasks() {
             const container = document.getElementById('task-container');
             const empty = document.getElementById('empty-state');
@@ -402,7 +379,6 @@
             }
             empty.classList.add('hidden');
 
-            // 1. 按日期分组
             const groups = {};
             tasks.forEach(task => {
                 const dateKey = new Date(task.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -410,10 +386,8 @@
                 groups[dateKey].push(task);
             });
 
-            // 2. 排序日期 (新在前)
             const sortedDates = Object.keys(groups).sort((a, b) => new Date(b) - new Date(a));
 
-            // 3. 渲染
             let html = '';
             sortedDates.forEach(date => {
                 html += `<div class="date-divider"><span class="date-label">${date}</span></div>`;
@@ -421,20 +395,20 @@
                     html += `
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md ${task.completed ? 'opacity-60' : ''} ${activeTaskId == task.id ? 'timer-active border-indigo-300 ring-2 ring-indigo-50' : ''}">
                             <div class="flex items-center space-x-4 mb-3 sm:mb-0">
-                                <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded-full border-gray-300 text-indigo-500 focus:ring-indigo-400">
+                                <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask('${task.id}')" class="w-5 h-5 rounded-full border-gray-300 text-indigo-500">
                                 <div class="flex flex-col">
                                     <span class="${task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}">${task.text}</span>
-                                    <span class="text-[10px] text-gray-400 uppercase tracking-tighter">${new Date(task.createdAt).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})}</span>
+                                    <span class="text-[10px] text-gray-400">${new Date(task.createdAt).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})}</span>
                                 </div>
                             </div>
                             <div class="flex items-center space-x-3 justify-end">
-                                <div class="text-xs font-bold font-mono bg-gray-50 px-3 py-1.5 rounded-lg text-gray-500 border border-gray-100">
-                                    ${formatTimeToDisplay(task.totalTime)}
+                                <div class="text-xs font-bold font-mono bg-gray-50 px-3 py-1.5 rounded-lg text-indigo-500 border border-indigo-50 min-w-[70px] text-center">
+                                    ${formatToHMS(task.totalTime)}
                                 </div>
-                                <button onclick="toggleTimer('${task.id}')" class="p-2 rounded-lg text-xs font-bold px-4 transition-colors ${activeTaskId == task.id ? 'bg-red-500 text-white shadow-lg shadow-red-100' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}">
-                                    ${activeTaskId == task.id ? '停止' : '开始计时'}
+                                <button onclick="toggleTimer('${task.id}')" class="p-2 rounded-lg text-xs font-bold px-4 transition-colors ${activeTaskId == task.id ? 'bg-red-500 text-white' : 'bg-indigo-50 text-indigo-600'}">
+                                    ${activeTaskId == task.id ? '停止' : '计时'}
                                 </button>
-                                <button onclick="deleteTask('${task.id}')" class="p-2 text-gray-300 hover:text-red-500 transition-colors">
+                                <button onclick="deleteTask('${task.id}')" class="p-2 text-gray-300 hover:text-red-500">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
                             </div>
@@ -448,30 +422,30 @@
         }
 
         function updateStats() {
-            const today = new Date().toLocaleDateString('zh-CN');
-            
-            // 统计今日任务
-            const todayTasks = tasks.filter(t => new Date(t.createdAt).toLocaleDateString('zh-CN') === today);
+            const todayStr = new Date().toLocaleDateString('zh-CN');
+            const todayTasks = tasks.filter(t => new Date(t.createdAt).toLocaleDateString('zh-CN') === todayStr);
             const completedToday = todayTasks.filter(t => t.completed).length;
             const timeTodaySec = todayTasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
-            
-            // 总统计
             const timeTotalSec = tasks.reduce((acc, t) => acc + (t.totalTime || 0), 0);
             
             document.getElementById('stat-completed').innerText = completedToday;
-            document.getElementById('stat-time-today').innerText = formatTimeToDisplay(timeTodaySec);
-            document.getElementById('stat-time-total').innerText = formatTimeToDisplay(timeTotalSec);
+            document.getElementById('stat-time-today').innerText = formatToFriendly(timeTodaySec);
+            document.getElementById('stat-time-total').innerText = formatToFriendly(timeTotalSec);
         }
 
-        // 时间格式化：秒 -> 小时 + 分钟
-        function formatTimeToDisplay(totalSeconds) {
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            
-            if (hours > 0) {
-                return `${hours} 小时 ${minutes} 分`;
-            }
-            return `${minutes} 分钟`;
+        // 格式 1: 时:分:秒 (用于列表详情)
+        function formatToHMS(s) {
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+        }
+
+        // 格式 2: 小时+分钟 (用于顶部统计)
+        function formatToFriendly(s) {
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            return `${h} 小时 ${m} 分`;
         }
 
         function showMessage(t) {
@@ -481,14 +455,6 @@
             setTimeout(() => b.classList.add('hidden'), 2000);
         }
 
-        document.addEventListener("visibilitychange", () => {
-            if (document.hidden && activeTaskId !== null) {
-                const task = tasks.find(t => t.id == activeTaskId);
-                saveTimeToCloud(activeTaskId, task.totalTime);
-            }
-        });
-
-        document.getElementById('current-date').innerText = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         initApp();
     </script>
 </body>
